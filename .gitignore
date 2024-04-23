@@ -1,7 +1,9 @@
 # MacOS
 .DS_Store
 
-weights
+.cache
+tmp*
+temp*
 
 # VuePress
 docs/.vuepress/.temp
