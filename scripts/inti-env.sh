@@ -37,4 +37,6 @@ python3 -m pip install -r requirements.txt
 
 cd $PROJECT_HOME/.cache/repo/GroundingDINO
 python3 -m pip install -e .
-# python3 -m pip install -e downloads/CLIP
+
+# freeze the requirements
+# python3 -m pip list --format=freeze > requirements.version.txt

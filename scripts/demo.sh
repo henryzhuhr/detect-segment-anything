@@ -4,3 +4,4 @@ conda activate $ENV_PATH
 echo "Activated $(python --version) in ($ENV_PATH)"
 
 python3 main.py
+# python3 main.py --device "cpu"

@@ -22,3 +22,9 @@ bash scripts/init-env.sh
 
 
 ## 快速上手
+
+
+
+## 其他
+
+- 🚀 [GroundingDINO](https://github.com/IDEA-Research/GroundingDINO)

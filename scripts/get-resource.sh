@@ -29,9 +29,7 @@ function clone_repo() {
     fi
 }
 
-# clone_repo "CLIP" "git@github.com:openai/CLIP.git"
-# clone_repo "GroundingDINO" "git@github.com:IDEA-Research/GroundingDINO.git"
-clone_repo "GroundingDINO" "git@github.com:HenryZhuHR/GroundingDINO.git" "dev"
+clone_repo "GroundingDINO" "git@github.com:IDEA-Research/GroundingDINO.git"
 
 
 cd $PROJECT_DIR/$SAVE_DIR
