@@ -7,7 +7,8 @@ bash scripts/get-resource.sh
 # fi
 
 PROJECT_HOME=$(pwd)
-ENV_PATH=./.env
+ENV_NAME=venv
+ENV_PATH=./.env/$ENV_NAME
 
 if [ ! -d $ENV_PATH ]; then
     SYS_PYTHON_VERSION=$(python3 -c 'import sys; print(".".join(map(str, sys.version_info[:3])))')
