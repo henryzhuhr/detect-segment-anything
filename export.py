@@ -1,8 +1,6 @@
 import argparse
 import os
-import time
 from typing import List
-import cv2
 import torch
 from groundingdino.util.inference import load_model, load_image, predict, annotate
 from groundingdino.models.GroundingDINO.groundingdino import GroundingDINO
@@ -16,9 +14,10 @@ def get_args():
     parser.add_argument("--config_file", type=str, default="config/GroundingDINO_SwinT_OGC.py")
     parser.add_argument("--checkpoint_path", type=str, default=DEFAULT_CPP)
     parser.add_argument("--img_path", type=str, default="examples/ailurus_fulgens.jpg")
-    parser.add_argument("--text_prompts", type=List[str], default=DEFAULT_TEXT_PROMPTS)
+    parser.add_argument("--text_prompts", metavar="N", type=str, nargs="+", default=DEFAULT_TEXT_PROMPTS)
     parser.add_argument("--box_theshold", type=float, default=0.35)
     parser.add_argument("--text_theshold", type=float, default=0.25)
+    parser.add_argument("--export_types", metavar="N", type=str, nargs="+", default=["openvino"])
     parser.add_argument("--export_dir", type=str, default="tmp")
     parser.add_argument("--export_name", type=str, default="groundingDINO")
     return parser.parse_args()
@@ -33,10 +32,10 @@ def main():
     export_name: str = args.export_name
 
     model: GroundingDINO = load_model(config_file, checkpoint_path, device, is_export=True)
-    export_onnx(model, export_dir, export_name, device)
+    export(model, export_dir, export_name, device)
 
 
-def export_onnx(model: GroundingDINO, export_dir="tmp", export_name="model", device="cpu"):
+def export(model: GroundingDINO, export_dir="tmp", export_name="model", device="cpu"):
     """
     see:
         1. https://pytorch.org/tutorials//beginner/onnx/export_simple_model_to_onnx_tutorial.html
@@ -44,8 +43,6 @@ def export_onnx(model: GroundingDINO, export_dir="tmp", export_name="model", dev
     refer OpenVINO https://blog.openvino.ai/blog-posts/enable-openvino-tm-optimization-for-groundingdino
     """
     export_file = os.path.join(export_dir, f"{export_name}.onnx")
-    if os.path.exists(export_file):
-        os.remove(export_file)
 
     tokenizer = model.tokenizer
     tokenized = tokenizer.__call__(["the running dog ."], return_tensors="pt")
@@ -73,7 +70,7 @@ def export_onnx(model: GroundingDINO, export_dir="tmp", export_name="model", dev
 
     # export DINO
     input_names = [
-        "images",
+        "img",
         "input_ids",
         "attention_mask",
         "position_ids",
@@ -104,12 +101,12 @@ def export_onnx(model: GroundingDINO, export_dir="tmp", export_name="model", dev
     # If we don't trace manually ov.convert_model will try to trace it automatically with default check_trace=True, which fails.
     # Therefore we trace manually with check_trace=False, despite there are warnings after tracing and conversion to OpenVINO IR
     # output boxes are correct.
-    traced_model = torch.jit.trace(
-        model,
-        example_inputs=dummpy_inputs,
-        strict=False,
-        check_trace=False,
-    )
+    # traced_model = torch.jit.trace(
+    #     model,
+    #     example_inputs=dummpy_inputs,
+    #     strict=False,
+    #     check_trace=False,
+    # )
     torch.onnx.export(
         model,
         dummpy_inputs,
@@ -120,6 +117,27 @@ def export_onnx(model: GroundingDINO, export_dir="tmp", export_name="model", dev
         dynamic_axes=dynamic_axes,
         opset_version=16,  # issue: https://github.com/pytorch/pytorch/issues/104190#issuecomment-1607676629
     )
+
+    try:
+        import openvino as ov
+
+        is_export_ov = True
+    except ImportError:
+        is_export_ov = False
+
+    if is_export_ov:
+        # export OpenVINO
+        # core = ov.Core()
+        # ov_input_names = {  # https://docs.openvino.ai/2024/api/ie_python_api/_autosummary/openvino.Type.html
+        #     "samples": ov.Type.f32,
+        #     "input_ids": ov.Type.i64,
+        #     "attention_mask": ov.Type.boolean,
+        #     "position_ids": ov.Type.i64,
+        #     "token_type_ids": ov.Type.i64,
+        #     "text_self_attention_masks": ov.Type.boolean,
+        # }
+        ov_model = ov.convert_model(model, example_input=dummpy_inputs)
+        ov.save_model(ov_model, export_file.replace(".onnx", ".xml"))
 
 
 if __name__ == "__main__":

@@ -4,17 +4,14 @@ import time
 from typing import List
 import cv2
 import numpy as np
-import onnxruntime as rt
-import torch
 from transformers import AutoTokenizer, BertTokenizerFast
-from groundingdino.util.utils import get_phrases_from_posmap
-from groundingdino.util.inference import annotate
+import openvino as ov
 
 
 def parse_arguments():
     parser = argparse.ArgumentParser()
     parser.add_argument("--device", default="cpu")
-    parser.add_argument("--model_path", default="tmp/groundingDINO.onnx")
+    parser.add_argument("--model_path", default="tmp/groundingDINO.xml")
     parser.add_argument("--max_text_len", type=int, default=256)
     parser.add_argument("--img_path", default="examples/sim_final.jpg")
     parser.add_argument("--box_threshold", type=float, default=0.1)
@@ -38,40 +35,15 @@ def main():
         "bert-base-uncased", cache_dir=".cache", local_files_only=True
     )
 
-    so = rt.SessionOptions()
-    # session = rt.InferenceSession(
-    #     model_path,
-    #     so,
-    #     providers=["OpenVINOExecutionProvider"],
-    #     provider_options=[{"device_type": "CPU_FP32"}],
-    # )
-    try:
-        import openvino
-        ov_available = True
-    except ImportError:
-        ov_available = False
-    device = args.device
-    if device == "cpu" and ov_available:
-        providers = ["OpenVINOExecutionProvider"]
-        provider_options = [{"device_type": "CPU_FP32"}]
-    elif device == "cpu" and not ov_available:
-        providers = ["CPUExecutionProvider"]
-        provider_options = []
-    elif device == "cuda":
-        providers = ["CUDAExecutionProvider"]
-        provider_options = [{"device_id": "0"}]
-    print(f"Using {device} device", providers)
+    core = ov.Core()
+    devices = core.available_devices
+    print(devices)
 
-    session = rt.InferenceSession(model_path, so, providers=providers, provider_options=provider_options)
+    compiled_model = core.compile_model(model_path, device_name="CPU")
+    print(compiled_model.inputs)
+    print(compiled_model.outputs)
 
-    input_names = session.get_inputs()
-    outputs = session.get_outputs()
-    output_names = list(map(lambda output: output.name, outputs))
-    for name in input_names:
-        print(name.name, name.shape, name.type)
-    # print(output_names)
-    exit()
-
+    st = time.time()
     img_src = cv2.imread(args.img_path)
     img = cv2.resize(img_src, (800, 800))
     img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
@@ -90,18 +62,16 @@ def main():
         cate_to_token_mask_list,
     ) = generate_masks_with_special_tokens_and_transfer_map_np(tokenized, specical_tokens)
 
-    st = time.time()
-    outputs = session.run(
-        output_names,
-        {
-            "images": img,
-            "input_ids": tokenized["input_ids"],
-            "attention_mask": (tokenized["attention_mask"]).astype(np.bool_),
-            "position_ids": position_ids[:, :max_text_len],
-            "token_type_ids": tokenized["token_type_ids"],
-            "text_token_mask": text_self_attention_masks[:, :max_text_len, :max_text_len],
-        },
-    )
+    inputs = {
+        "samples": img,
+        "input_ids": tokenized["input_ids"],
+        "attention_mask": (tokenized["attention_mask"]).astype(np.bool_),
+        "position_ids": position_ids[:, :max_text_len],
+        "token_type_ids": tokenized["token_type_ids"],
+        "text_self_attention_masks": text_self_attention_masks[:, :max_text_len, :max_text_len],
+    }
+
+    outputs = compiled_model.infer_new_request(inputs)
     pred_logits: np.ndarray = outputs[0][0]
     pred_logits = sigmoid(pred_logits)
     pred_boxes: np.ndarray = outputs[1][0]
@@ -180,9 +150,9 @@ def main():
             lineType=cv2.LINE_AA,
         )
 
-    print("Time taken: ", time.time()-st)
+    print("Time taken: ", time.time() - st)
     os.makedirs(save_dir := "tmp", exist_ok=True)
-    cv2.imwrite(os.path.join(save_dir, "annotated_image.onnx.jpg"), scene)
+    cv2.imwrite(os.path.join(save_dir, "annotated_image.ov.jpg"), scene)
 
 
 def preprocess_caption(caption: str) -> str:

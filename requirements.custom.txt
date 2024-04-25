@@ -10,6 +10,9 @@ onnxscript
 onnxruntime
 optimum[exporters,onnxruntime]
 
+# -- OpenVINO --
+openvino==2024.0.0
+
 # -- dev 
 # pipreqs
 

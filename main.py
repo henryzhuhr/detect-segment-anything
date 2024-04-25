@@ -121,7 +121,7 @@ def predict(
         tokenized["attention_mask"] = tokenized["attention_mask"][:, : model.max_text_len]
         tokenized["token_type_ids"] = tokenized["token_type_ids"][:, : model.max_text_len]
     with torch.no_grad():
-        outputs = model(
+        outputs = model.forward(
             image[None],
             tokenized["input_ids"],
             tokenized["attention_mask"],
