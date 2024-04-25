@@ -8,6 +8,9 @@ opencv-python
 onnx
 onnxscript
 onnxruntime
+optimum[exporters,onnxruntime]
 
 # -- dev 
 # pipreqs
+
+

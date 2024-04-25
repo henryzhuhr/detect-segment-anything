@@ -24,6 +24,15 @@ bash scripts/init-env.sh
 ## 快速上手
 
 
+## 转换
+
+### PyTorch 转化为 ONNX
+
+```shell
+python3 export.py
+```
+
+
 
 ## 其他
 

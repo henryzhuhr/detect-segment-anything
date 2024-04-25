@@ -9,46 +9,34 @@ from groundingdino.models.GroundingDINO.groundingdino import GroundingDINO
 
 
 def get_args():
-
+    DEFAULT_CPP = ".cache/weights/groundingdino_swint_ogc.pth"
+    DEFAULT_TEXT_PROMPTS = ["person", "volleyball", "shoes", "ailurus fulgens", "panda"]
     parser = argparse.ArgumentParser(description="GroundingDINO Inference")
     parser.add_argument("--device", type=str, default=None, help="cuda, mps, cpu")
     parser.add_argument("--config_file", type=str, default="config/GroundingDINO_SwinT_OGC.py")
-    parser.add_argument(
-        "--checkpoint_path",
-        type=str,
-        default=".cache/weights/groundingdino_swint_ogc.pth",
-    )
+    parser.add_argument("--checkpoint_path", type=str, default=DEFAULT_CPP)
     parser.add_argument("--img_path", type=str, default="examples/ailurus_fulgens.jpg")
-    parser.add_argument(
-        "--text_prompts",
-        type=List[str],
-        default=["person", "volleyball", "shoes", "ailurus fulgens", "panda"],
-    )
+    parser.add_argument("--text_prompts", type=List[str], default=DEFAULT_TEXT_PROMPTS)
     parser.add_argument("--box_theshold", type=float, default=0.35)
     parser.add_argument("--text_theshold", type=float, default=0.25)
+    parser.add_argument("--export_dir", type=str, default="tmp")
+    parser.add_argument("--export_name", type=str, default="groundingDINO")
     return parser.parse_args()
 
 
 def main():
     args = get_args()
-    device = torch.device("cpu")
+    device = torch.device("cpu")  # using CPU to export to avoid bug
     config_file: str = args.config_file
     checkpoint_path: str = args.checkpoint_path
+    export_dir: str = args.export_dir
+    export_name: str = args.export_name
 
     model: GroundingDINO = load_model(config_file, checkpoint_path, device, is_export=True)
-
-    dummy_input = torch.randn(1, 3, 800, 800, device=device)
-    export_dir = "tmp"
-    export_name = "groundingDINO"
-    export_onnx(model, dummy_input, export_dir, export_name)
+    export_onnx(model, export_dir, export_name, device)
 
 
-def export_onnx(
-    model: GroundingDINO,
-    dummy_input: torch.Tensor,
-    export_dir="tmp",
-    export_name="groundingDINO",
-):
+def export_onnx(model: GroundingDINO, export_dir="tmp", export_name="model", device="cpu"):
     """
     see:
         1. https://pytorch.org/tutorials//beginner/onnx/export_simple_model_to_onnx_tutorial.html
@@ -59,28 +47,47 @@ def export_onnx(
     if os.path.exists(export_file):
         os.remove(export_file)
 
-    # prepare dummy inputs
-    caption = "the running dog ."  # ". ".join(input_text)
+    tokenizer = model.tokenizer
+    tokenized = tokenizer.__call__(["the running dog ."], return_tensors="pt")
+    input_ids: torch.Tensor = tokenized["input_ids"]
+    token_type_ids = tokenized["token_type_ids"]
+    attention_mask = tokenized["attention_mask"]
+    position_ids = torch.arange(input_ids.shape[1]).reshape(1, -1)
+    text_token_mask = torch.randint(0, 2, (1, input_ids.shape[1], input_ids.shape[1]), dtype=torch.bool)
 
-    input_ids = model.tokenizer([caption], return_tensors="pt")[
-        "input_ids"
-    ]  # https://huggingface.co/docs/transformers/main_classes/onnx
     position_ids = torch.tensor([[0, 0, 1, 2, 3, 0]])
     token_type_ids = torch.tensor([[0, 0, 0, 0, 0, 0]])
     attention_mask = torch.tensor([[True, True, True, True, True, True]])
-    text_token_mask = torch.tensor(
-        [
-            [
-                [True, False, False, False, False, False],
-                [False, True, True, True, True, False],
-                [False, True, True, True, True, False],
-                [False, True, True, True, True, False],
-                [False, True, True, True, True, False],
-                [False, False, False, False, False, True],
-            ]
-        ]
+    # fmt: off
+    text_token_mask = torch.tensor([[
+        [True, False, False, False, False, False],
+        [False, True, True, True, True, False],
+        [False, True, True, True, True, False],
+        [False, True, True, True, True, False],
+        [False, True, True, True, True, False],
+        [False, False, False, False, False, True],
+    ]])
+    # fmt: on
+
+    img = torch.randn(1, 3, 800, 800, device=device)
+
+    # export DINO
+    input_names = [
+        "images",
+        "input_ids",
+        "attention_mask",
+        "position_ids",
+        "token_type_ids",
+        "text_token_mask",
+    ]
+    dummpy_inputs = (
+        img,
+        input_ids,
+        attention_mask,
+        position_ids,
+        token_type_ids,
+        text_token_mask,
     )
-    images = torch.randn(1, 3, 800, 800)
     dynamic_axes = {
         "input_ids": {0: "batch_size", 1: "seq_len"},
         "attention_mask": {0: "batch_size", 1: "seq_len"},
@@ -91,39 +98,27 @@ def export_onnx(
         "logits": {0: "batch_size"},
         "boxes": {0: "batch_size"},
     }
-    inputs = {
-        "images": images,
-        "input_ids": input_ids,
-        "attention_mask": attention_mask,
-        "position_ids": position_ids,
-        "token_type_ids": token_type_ids,
-        "text_token_mask": text_token_mask,
-    }
-    input_names = [
-        "images",
-        "input_ids",
-        "attention_mask",
-        "position_ids",
-        "token_type_ids",
-        "text_token_mask",
-    ]
     output_names = ["logits", "boxes"]
+    for par in model.parameters():
+        par.requires_grad = False
+    # If we don't trace manually ov.convert_model will try to trace it automatically with default check_trace=True, which fails.
+    # Therefore we trace manually with check_trace=False, despite there are warnings after tracing and conversion to OpenVINO IR
+    # output boxes are correct.
+    traced_model = torch.jit.trace(
+        model,
+        example_inputs=dummpy_inputs,
+        strict=False,
+        check_trace=False,
+    )
     torch.onnx.export(
         model,
-        (
-            images,
-            input_ids,
-            attention_mask,
-            position_ids,
-            token_type_ids,
-            text_token_mask,
-        ),
+        dummpy_inputs,
         export_file,
         verbose=False,
         input_names=input_names,
         output_names=output_names,
         dynamic_axes=dynamic_axes,
-        opset_version=16,
+        opset_version=16,  # issue: https://github.com/pytorch/pytorch/issues/104190#issuecomment-1607676629
     )
 
 
