@@ -37,32 +37,32 @@ def main():
     tokenizer: BertTokenizerFast = AutoTokenizer.from_pretrained(
         "bert-base-uncased", cache_dir=".cache", local_files_only=True
     )
-
-    so = rt.SessionOptions()
-    # session = rt.InferenceSession(
-    #     model_path,
-    #     so,
-    #     providers=["OpenVINOExecutionProvider"],
-    #     provider_options=[{"device_type": "CPU_FP32"}],
-    # )
     try:
         import openvino
+
         ov_available = True
     except ImportError:
         ov_available = False
     device = args.device
     if device == "cpu" and ov_available:
         providers = ["OpenVINOExecutionProvider"]
-        provider_options = [{"device_type": "CPU_FP32"}]
+        provider_options = [{"device_type": "GPU_FP32"}]
     elif device == "cpu" and not ov_available:
         providers = ["CPUExecutionProvider"]
         provider_options = []
     elif device == "cuda":
         providers = ["CUDAExecutionProvider"]
         provider_options = [{"device_id": "0"}]
-    print(f"Using {device} device", providers)
-
-    session = rt.InferenceSession(model_path, so, providers=providers, provider_options=provider_options)
+    # print(rt.get_all_providers())
+    # print(rt.get_available_providers())
+    print(f"Using device", providers)
+    so = rt.SessionOptions()
+    session = rt.InferenceSession(
+        model_path,
+        so,
+        providers=providers,
+        provider_options=provider_options,
+    )
 
     input_names = session.get_inputs()
     outputs = session.get_outputs()
@@ -70,7 +70,7 @@ def main():
     for name in input_names:
         print(name.name, name.shape, name.type)
     # print(output_names)
-    exit()
+    # exit()
 
     img_src = cv2.imread(args.img_path)
     img = cv2.resize(img_src, (800, 800))
@@ -94,7 +94,7 @@ def main():
     outputs = session.run(
         output_names,
         {
-            "images": img,
+            "img": img,
             "input_ids": tokenized["input_ids"],
             "attention_mask": (tokenized["attention_mask"]).astype(np.bool_),
             "position_ids": position_ids[:, :max_text_len],
@@ -180,7 +180,7 @@ def main():
             lineType=cv2.LINE_AA,
         )
 
-    print("Time taken: ", time.time()-st)
+    print("Time taken: ", time.time() - st)
     os.makedirs(save_dir := "tmp", exist_ok=True)
     cv2.imwrite(os.path.join(save_dir, "annotated_image.onnx.jpg"), scene)
 

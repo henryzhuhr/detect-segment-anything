@@ -8,10 +8,13 @@ opencv-python
 onnx
 onnxscript
 onnxruntime
-optimum[exporters,onnxruntime]
+# optimum[exporters,onnxruntime]
+# onnxruntime-gpu
 
 # -- OpenVINO --
-openvino==2024.0.0
+# openvino==2023.3.0
+openvino-dev==2024.0.0
+# onnxruntime-openvino
 
 # -- dev 
 # pipreqs

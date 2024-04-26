@@ -31,6 +31,8 @@ def main():
     export_dir: str = args.export_dir
     export_name: str = args.export_name
 
+    os.makedirs(export_dir, exist_ok=True)
+
     model: GroundingDINO = load_model(config_file, checkpoint_path, device, is_export=True)
     export(model, export_dir, export_name, device)
 
@@ -47,10 +49,10 @@ def export(model: GroundingDINO, export_dir="tmp", export_name="model", device="
     tokenizer = model.tokenizer
     tokenized = tokenizer.__call__(["the running dog ."], return_tensors="pt")
     input_ids: torch.Tensor = tokenized["input_ids"]
-    token_type_ids = tokenized["token_type_ids"]
-    attention_mask = tokenized["attention_mask"]
-    position_ids = torch.arange(input_ids.shape[1]).reshape(1, -1)
-    text_token_mask = torch.randint(0, 2, (1, input_ids.shape[1], input_ids.shape[1]), dtype=torch.bool)
+    # token_type_ids = tokenized["token_type_ids"]
+    # attention_mask = tokenized["attention_mask"]
+    # position_ids = torch.arange(input_ids.shape[1]).reshape(1, -1)
+    # text_token_mask = torch.randint(0, 2, (1, input_ids.shape[1], input_ids.shape[1]), dtype=torch.bool)
 
     position_ids = torch.tensor([[0, 0, 1, 2, 3, 0]])
     token_type_ids = torch.tensor([[0, 0, 0, 0, 0, 0]])
@@ -66,7 +68,7 @@ def export(model: GroundingDINO, export_dir="tmp", export_name="model", device="
     ]])
     # fmt: on
 
-    img = torch.randn(1, 3, 800, 800, device=device)
+    img = torch.randn(1, 3, 800, 1200, device=device)
 
     # export DINO
     input_names = [
@@ -86,27 +88,29 @@ def export(model: GroundingDINO, export_dir="tmp", export_name="model", device="
         text_token_mask,
     )
     dynamic_axes = {
+        "img": {0: "batch_size", 2: "height", 3: "width"},
         "input_ids": {0: "batch_size", 1: "seq_len"},
         "attention_mask": {0: "batch_size", 1: "seq_len"},
         "position_ids": {0: "batch_size", 1: "seq_len"},
         "token_type_ids": {0: "batch_size", 1: "seq_len"},
         "text_token_mask": {0: "batch_size", 1: "seq_len", 2: "seq_len"},
-        "img": {0: "batch_size", 2: "height", 3: "width"},
         "logits": {0: "batch_size"},
         "boxes": {0: "batch_size"},
     }
     output_names = ["logits", "boxes"]
-    for par in model.parameters():
-        par.requires_grad = False
+
     # If we don't trace manually ov.convert_model will try to trace it automatically with default check_trace=True, which fails.
     # Therefore we trace manually with check_trace=False, despite there are warnings after tracing and conversion to OpenVINO IR
     # output boxes are correct.
-    # traced_model = torch.jit.trace(
-    #     model,
-    #     example_inputs=dummpy_inputs,
-    #     strict=False,
-    #     check_trace=False,
-    # )
+    for par in model.parameters():
+        par.requires_grad = False
+    traced_model = torch.jit.trace(
+        model,
+        example_inputs=dummpy_inputs,
+        strict=False,
+        check_trace=False,
+    )
+
     torch.onnx.export(
         model,
         dummpy_inputs,
@@ -136,7 +140,8 @@ def export(model: GroundingDINO, export_dir="tmp", export_name="model", device="
         #     "token_type_ids": ov.Type.i64,
         #     "text_self_attention_masks": ov.Type.boolean,
         # }
-        ov_model = ov.convert_model(model, example_input=dummpy_inputs)
+
+        ov_model = ov.convert_model(traced_model, example_input=dummpy_inputs)
         ov.save_model(ov_model, export_file.replace(".onnx", ".xml"))
 
 

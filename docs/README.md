@@ -34,8 +34,8 @@ python3 export.py
 
 
 
-## 其他
+## 参考资料
 
 - 🚀 [GroundingDINO](https://github.com/IDEA-Research/GroundingDINO)
-
-
+- 🚀 [GroundingDINO(wenyi5608-openvino)](https://github.com/wenyi5608/GroundingDINO/tree/wenyi5608-openvino)
+- TensorRT with GroundingDINO [#46](https://github.com/IDEA-Research/GroundingDINO/issues/46)

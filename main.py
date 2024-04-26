@@ -17,7 +17,6 @@ from groundingdino.models.GroundingDINO.groundingdino import GroundingDINO
 
 
 def get_args():
-
     parser = argparse.ArgumentParser(description="GroundingDINO Inference")
     parser.add_argument("--device", type=str, default=None, help="cuda, mps, cpu")
     parser.add_argument("--config_file", type=str, default="config/GroundingDINO_SwinT_OGC.py")
@@ -183,17 +182,17 @@ def generate_masks_with_special_tokens_and_transfer_map(tokenized, special_token
     bs, num_token = input_ids.shape
     # special_tokens_mask: bs, num_token. 1 for special tokens. 0 for normal tokens
     special_tokens_mask = torch.zeros((bs, num_token), device=input_ids.device).bool()
-    
+
     for special_token in special_tokens_list:
-        special_tokens_mask |= (input_ids == special_token)
+        special_tokens_mask |= input_ids == special_token
 
     # idxs: each row is a list of indices of special tokens
-    idxs = torch.nonzero(special_tokens_mask)    
+    idxs = torch.nonzero(special_tokens_mask)
 
     # generate attention mask and positional ids
     attention_mask = torch.eye(num_token, device=input_ids.device).bool().unsqueeze(0).repeat(bs, 1, 1)
     position_ids = torch.zeros((bs, num_token), device=input_ids.device)
-    
+
     cate_to_token_mask_list = [[] for _ in range(bs)]
     previous_col = 0
     for i in range(idxs.shape[0]):
@@ -214,9 +213,9 @@ def generate_masks_with_special_tokens_and_transfer_map(tokenized, special_token
     # cate_to_token_mask_list = [
     #     torch.stack(cate_to_token_mask_listi, dim=0) for cate_to_token_mask_listi in cate_to_token_mask_list
     # ]
-    cate_to_token_mask_list=[]
+    cate_to_token_mask_list = []
     for cate_to_token_mask_listi in cate_to_token_mask_list:
-        a_s=torch.stack(cate_to_token_mask_listi, dim=0)
+        a_s = torch.stack(cate_to_token_mask_listi, dim=0)
         cate_to_token_mask_list.append(a_s)
 
     # # padding mask

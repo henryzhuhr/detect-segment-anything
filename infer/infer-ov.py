@@ -11,9 +11,9 @@ import openvino as ov
 def parse_arguments():
     parser = argparse.ArgumentParser()
     parser.add_argument("--device", default="cpu")
-    parser.add_argument("--model_path", default="tmp/groundingDINO.xml")
+    parser.add_argument("--model_path", default="tmp/groundingdino.xml")
     parser.add_argument("--max_text_len", type=int, default=256)
-    parser.add_argument("--img_path", default="examples/sim_final.jpg")
+    parser.add_argument("--img_path", default="examples/cjy.jpg")
     parser.add_argument("--box_threshold", type=float, default=0.1)
     parser.add_argument("--text_threshold", type=float, default=0.25)
     return parser.parse_args()
@@ -26,7 +26,7 @@ def main():
     box_threshold: float = args.box_threshold
     text_threshold: float = args.text_threshold
 
-    text_prompts = ["person", "volleyball", "shoes", "chair", "panda"]
+    text_prompts = ["person", "volleyball", "shoes", "panda"]
     # 为 text_prompts 每个类别随机生成一个颜色
     color_map = []
     for i in range(len(text_prompts)):
@@ -39,9 +39,10 @@ def main():
     devices = core.available_devices
     print(devices)
 
-    compiled_model = core.compile_model(model_path, device_name="CPU")
+    compiled_model = core.compile_model(model_path, device_name="GPU")
     print(compiled_model.inputs)
     print(compiled_model.outputs)
+    # exit()
 
     st = time.time()
     img_src = cv2.imread(args.img_path)
@@ -51,7 +52,7 @@ def main():
     img = np.expand_dims(img.transpose(2, 0, 1), axis=0)
     img = np.ascontiguousarray(img)
 
-    caption = ". ".join(text_prompts)
+    caption = " . ".join(text_prompts)
     captions = [preprocess_caption(caption=caption)]
 
     tokenized = tokenizer.__call__(captions, padding="longest", return_tensors="np")
@@ -62,16 +63,30 @@ def main():
         cate_to_token_mask_list,
     ) = generate_masks_with_special_tokens_and_transfer_map_np(tokenized, specical_tokens)
 
+    # inputs = {
+    #     "samples": img,
+    #     "input_ids": tokenized["input_ids"],
+    #     "attention_mask": (tokenized["attention_mask"]).astype(np.bool_),
+    #     "position_ids": position_ids[:, :max_text_len],
+    #     "token_type_ids": tokenized["token_type_ids"],
+    #     "text_self_attention_masks": text_self_attention_masks[:, :max_text_len, :max_text_len],
+    # }
     inputs = {
-        "samples": img,
+        "img": img,
         "input_ids": tokenized["input_ids"],
         "attention_mask": (tokenized["attention_mask"]).astype(np.bool_),
         "position_ids": position_ids[:, :max_text_len],
         "token_type_ids": tokenized["token_type_ids"],
-        "text_self_attention_masks": text_self_attention_masks[:, :max_text_len, :max_text_len],
+        "text_token_mask": text_self_attention_masks[:, :max_text_len, :max_text_len],
     }
 
+    # -- Run inference Sync --
     outputs = compiled_model.infer_new_request(inputs)
+    # -- Run inference Sync --
+    # request = compiled_model.create_infer_request()
+    # request.start_async(inputs, share_inputs=False)
+    # request.wait()
+    exit()
     pred_logits: np.ndarray = outputs[0][0]
     pred_logits = sigmoid(pred_logits)
     pred_boxes: np.ndarray = outputs[1][0]
@@ -104,13 +119,16 @@ def main():
     for i, phrase in enumerate(phrases):
         if phrase == "":
             continue
-        print(phrase, boxes_l[i], logits[i])
+        # print(phrase, boxes_l[i], logits[i])
         cx, cy, w, h = boxes_l[i]
         x1 = cx - w // 2
         y1 = cy - h // 2
         x2 = cx + w // 2
         y2 = cy + h // 2
-        color = color_map[text_prompts.index(phrase)]
+        try:
+            color = color_map[text_prompts.index(phrase)]
+        except ValueError:
+            color = (0, 0, 0)
 
         cv2.rectangle(scene, (x1, y1), (x2, y2), color, text_thickness * 2)
         text = f"{phrase} {logits[i]:.2f}"
