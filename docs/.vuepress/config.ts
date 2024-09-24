@@ -35,5 +35,6 @@ export default defineUserConfig({
         }),
         externalLinkIconPlugin({}),
         gitPlugin({}),
+        
     ],
 })

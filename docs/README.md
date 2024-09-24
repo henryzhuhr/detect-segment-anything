@@ -39,3 +39,8 @@ python3 export.py
 - 🚀 [GroundingDINO](https://github.com/IDEA-Research/GroundingDINO)
 
 
+$f(x)$
+
+$$
+\sigma
+$$
